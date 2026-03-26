@@ -25,6 +25,7 @@ public class GatewayController {
     private final GatewayService gatewayService;
     private final RequestLogRepository logRepository;
     private final ProducerTemplate camelProducer;
+    private final com.gateway.service.RateLimiter rateLimiter;
 
     @PostMapping("/proxy/{service}/**")
     @Operation(summary = "Proxy request to a downstream service via Camel")
@@ -34,7 +35,9 @@ public class GatewayController {
             @RequestHeader(value = "X-Forwarded-For", defaultValue = "127.0.0.1") String clientIp) {
 
         String result = gatewayService.proxyRequest(service, "POST", "/api/wallet", body, clientIp);
-        return ResponseEntity.ok(result);
+        return ResponseEntity.ok()
+                .header("X-RateLimit-Remaining", String.valueOf(rateLimiter.getRemaining(clientIp)))
+                .body(result);
     }
 
     @GetMapping("/health")
