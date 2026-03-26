@@ -26,6 +26,7 @@ public class GatewayController {
     private final RequestLogRepository logRepository;
     private final ProducerTemplate camelProducer;
     private final com.gateway.service.RateLimiter rateLimiter;
+    private final com.gateway.service.CircuitBreaker circuitBreaker;
 
     @PostMapping("/proxy/{service}/**")
     @Operation(summary = "Proxy request to a downstream service via Camel")
@@ -41,9 +42,14 @@ public class GatewayController {
     }
 
     @GetMapping("/health")
-    @Operation(summary = "Check health of all downstream services")
-    public ResponseEntity<List<ServiceHealth>> health() {
-        return ResponseEntity.ok(gatewayService.checkHealth());
+    @Operation(summary = "Check health of all downstream services with circuit breaker state")
+    public ResponseEntity<Map<String, Object>> health() {
+        var services = gatewayService.checkHealth();
+        var cbStates = new java.util.LinkedHashMap<String, String>();
+        for (var svc : services) {
+            cbStates.put(svc.getName(), circuitBreaker.getState(svc.getName()));
+        }
+        return ResponseEntity.ok(Map.of("services", services, "circuitBreakers", cbStates));
     }
 
     @GetMapping("/stats")
