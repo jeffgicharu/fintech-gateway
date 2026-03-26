@@ -1,0 +1,37 @@
+spring:
+  application:
+    name: fintech-gateway
+  data:
+    mongodb:
+      database: gateway
+  graphql:
+    graphiql:
+      enabled: true
+      path: /graphiql
+
+server:
+  port: 8383
+
+camel:
+  servlet:
+    mapping:
+      context-path: /camel/*
+  springboot:
+    name: fintech-gateway
+
+gateway:
+  services:
+    wallet-api: http://localhost:8080
+    ussd-simulator: http://localhost:8181
+    notification-service: http://localhost:8282
+  rate-limit:
+    requests-per-minute: 60
+  circuit-breaker:
+    threshold: 5
+    half-open-after-ms: 30000
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

@@ -1,0 +1,26 @@
+services:
+  fintech-gateway:
+    build: .
+    ports:
+      - "8383:8383"
+    environment:
+      SPRING_DATA_MONGODB_URI: mongodb://mongo:27017/gateway
+    depends_on:
+      - mongo
+    networks:
+      - gateway-net
+
+  mongo:
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    networks:
+      - gateway-net
+
+volumes:
+  mongodata:
+
+networks:
+  gateway-net:

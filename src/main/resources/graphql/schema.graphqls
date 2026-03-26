@@ -1,0 +1,78 @@
+type Query {
+    requestLog(id: String!): RequestLog
+    requestLogs(service: String, status: String, limit: Int): [RequestLog!]!
+    serviceHealth: [ServiceHealth!]!
+    gatewayStats: GatewayStats!
+}
+
+type Mutation {
+    sendMoney(input: SendMoneyInput!): TransactionResult!
+    sendNotification(input: NotificationInput!): NotificationResult!
+}
+
+input SendMoneyInput {
+    senderPhone: String!
+    recipientPhone: String!
+    amount: Float!
+    pin: String!
+}
+
+input NotificationInput {
+    channel: String!
+    recipient: String!
+    templateId: String
+    body: String
+    params: [ParamInput!]
+}
+
+input ParamInput {
+    key: String!
+    value: String!
+}
+
+type TransactionResult {
+    success: Boolean!
+    reference: String
+    message: String!
+    fee: Float
+}
+
+type NotificationResult {
+    success: Boolean!
+    notificationId: String
+    message: String!
+}
+
+type RequestLog {
+    id: String!
+    service: String!
+    method: String!
+    path: String!
+    status: Int!
+    durationMs: Int!
+    requestBody: String
+    responseBody: String
+    timestamp: String!
+}
+
+type ServiceHealth {
+    name: String!
+    url: String!
+    status: String!
+    responseTimeMs: Int!
+    lastChecked: String!
+}
+
+type GatewayStats {
+    totalRequests: Int!
+    successCount: Int!
+    failureCount: Int!
+    avgResponseTimeMs: Float!
+    requestsByService: [ServiceCount!]!
+}
+
+type ServiceCount {
+    service: String!
+    count: Int!
+}
+
