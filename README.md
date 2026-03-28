@@ -7,23 +7,23 @@ This project sits in that middle layer. It routes requests to downstream microse
 ## What It Does
 
 - **Routes requests** to downstream services (wallet-api, notification-service) through Camel integration routes
-- **Translates protocols** — accepts SOAP/XML from legacy banking systems and converts to REST/JSON (and vice versa)
-- **Exposes GraphQL** alongside REST — same data, but clients can query exactly what they need
-- **Rate limits** per client — sliding window counter, remaining quota returned in response headers
-- **Circuit breaker** per downstream service — stops hammering a service that's already down, tests recovery automatically
-- **Logs everything** to MongoDB — service, method, path, status, duration, request body, response body
+- **Translates protocols**: accepts SOAP/XML from legacy banking systems and converts to REST/JSON (and vice versa)
+- **Exposes GraphQL** alongside REST. Same data, but clients can query exactly what they need
+- **Rate limits** per client with a sliding window counter, remaining quota returned in response headers
+- **Circuit breaker** per downstream service. Stops hammering a service that's already down, tests recovery automatically
+- **Logs everything** to MongoDB: service, method, path, status, duration, request body, response body
 
 ## How the Camel Routes Work
 
 Apache Camel is an integration framework. Instead of writing HTTP client code directly, you define routes that describe how messages flow between systems. This project has five routes:
 
-- **wallet-balance** — proxies balance queries to the wallet API
-- **wallet-transfer** — processes a transfer, then fires an async notification via SEDA (Camel's in-memory queue)
-- **post-transfer-notification** — picks up the async message and triggers a notification
-- **send-notification** — proxies notification dispatch
-- **dead-letter** — catches messages that failed after all retries and logs them for investigation
+- **wallet-balance**: proxies balance queries to the wallet API
+- **wallet-transfer**: processes a transfer, then fires an async notification via SEDA (Camel's in-memory queue)
+- **post-transfer-notification**: picks up the async message and triggers a notification
+- **send-notification**: proxies notification dispatch
+- **dead-letter**: catches messages that failed after all retries and logs them for investigation
 
-The SEDA pattern is worth calling out — after a transfer completes, the notification doesn't block the response. It goes into an in-memory queue and gets processed separately. If the notification service is down, the transfer still succeeds.
+The SEDA pattern is worth calling out. After a transfer completes, the notification doesn't block the response. It goes into an in-memory queue and gets processed separately. If the notification service is down, the transfer still succeeds.
 
 ## Quick Start
 
@@ -33,7 +33,7 @@ mvn spring-boot:run
 # GraphiQL:   http://localhost:8383/graphiql
 ```
 
-No external databases needed — uses in-memory MongoDB.
+No external databases needed. Uses in-memory MongoDB.
 
 ## SOAP Example
 
