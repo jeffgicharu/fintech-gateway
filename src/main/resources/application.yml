@@ -20,6 +20,9 @@ camel:
     name: fintech-gateway
 
 gateway:
+  jwt:
+    secret: fintech-gateway-jwt-secret-key-must-be-at-least-32-bytes
+    expiration-ms: 3600000
   services:
     wallet-api: http://localhost:8080
     ussd-simulator: http://localhost:8181
