@@ -69,7 +69,7 @@ class GatewayTest {
     @DisplayName("SOAP adapter parses XML request")
     void soapAdapter_parsesRequest() {
         String xml = """
-                <soap:Envelope>
+                <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
                   <soap:Body>
                     <SourceAccount>+254700000001</SourceAccount>
                     <DestinationAccount>+254700000002</DestinationAccount>
