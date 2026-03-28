@@ -1,92 +1,101 @@
 # Fintech Gateway
 
-An API gateway and integration layer that sits between clients and downstream microservices. Built with **Apache Camel** for message routing, **GraphQL** for flexible querying, and a **SOAP/XML adapter** for legacy banking system integration — with all traffic logged to **MongoDB** for analytics, debugging, and compliance.
+In financial services, your mobile app talks REST and JSON. But the core banking system on the other end? It still speaks SOAP and XML. And somewhere between the two, you need rate limiting, circuit breakers, and a way to figure out why a request failed at 3am.
 
-In fintech, the gateway is where modern meets legacy. Mobile apps speak REST and GraphQL; core banking systems speak SOAP and XML. This project bridges that gap while adding the resilience patterns (circuit breakers, rate limiting) needed to keep services available at 99.99%.
+This project sits in that middle layer. It routes requests to downstream microservices using **Apache Camel**, exposes a **GraphQL** API for flexible analytics queries, translates between **REST and SOAP** for legacy system integration, and logs every request to **MongoDB** so nothing disappears into a black hole.
 
-## Why This Architecture
+## What It Does
 
-| Problem | Solution | Implementation |
-|---|---|---|
-| Client needs REST, core banking needs SOAP | Protocol translation | `SoapAdapter` converts between JSON and SOAP envelopes bidirectionally |
-| Mobile app wants flexible queries | GraphQL alongside REST | Same data, two interfaces — REST for transactions, GraphQL for analytics |
-| Downstream service goes down | Circuit breaker | Per-service failure tracking with CLOSED → OPEN → HALF_OPEN states |
-| Single client overwhelms the API | Rate limiting | Sliding window per-client (60 req/min default) with remaining quota in headers |
-| Can't debug failed requests | MongoDB traffic logging | Every request/response logged with service, duration, status, and correlation ID |
-| Need real-time integration patterns | Apache Camel routes | Content-based routing, SEDA async messaging, dead letter channel for failures |
+- **Routes requests** to downstream services (wallet-api, notification-service) through Camel integration routes
+- **Translates protocols** — accepts SOAP/XML from legacy banking systems and converts to REST/JSON (and vice versa)
+- **Exposes GraphQL** alongside REST — same data, but clients can query exactly what they need
+- **Rate limits** per client — sliding window counter, remaining quota returned in response headers
+- **Circuit breaker** per downstream service — stops hammering a service that's already down, tests recovery automatically
+- **Logs everything** to MongoDB — service, method, path, status, duration, request body, response body
 
-## Tech Stack
+## How the Camel Routes Work
 
-| Layer | Technology |
-|---|---|
-| Framework | Spring Boot 3.2 |
-| Integration | Apache Camel 4.4 |
-| APIs | REST + GraphQL + SOAP/XML |
-| Analytics DB | MongoDB (in-memory `mongo-java-server` for dev) |
-| Resilience | Custom circuit breaker + rate limiter |
+Apache Camel is an integration framework. Instead of writing HTTP client code directly, you define routes that describe how messages flow between systems. This project has five routes:
 
-## Architecture
+- **wallet-balance** — proxies balance queries to the wallet API
+- **wallet-transfer** — processes a transfer, then fires an async notification via SEDA (Camel's in-memory queue)
+- **post-transfer-notification** — picks up the async message and triggers a notification
+- **send-notification** — proxies notification dispatch
+- **dead-letter** — catches messages that failed after all retries and logs them for investigation
 
-```
-Clients
-  │
-  ├── REST ──────► GatewayController ──► Camel Routes ──► wallet-api
-  │                     │                                 notification-service
-  ├── GraphQL ──► GraphQLController ──► GatewayService
-  │
-  └── SOAP/XML ─► SoapController ───► SoapAdapter ───► REST translation
-                        │
-                        ▼
-                 Rate Limiter → Circuit Breaker → Proxy → Log to MongoDB
-```
+The SEDA pattern is worth calling out — after a transfer completes, the notification doesn't block the response. It goes into an in-memory queue and gets processed separately. If the notification service is down, the transfer still succeeds.
 
-### Camel Routes
-
-| Route | Pattern | Purpose |
-|---|---|---|
-| `wallet-balance` | Direct | Proxy balance queries |
-| `wallet-transfer` | Direct → SEDA | Transfer, then async notification trigger |
-| `post-transfer-notification` | SEDA | Fire-and-forget notification after transfer completes |
-| `send-notification` | Direct | Proxy notification dispatch |
-| `dead-letter` | Dead Letter Channel | Capture and log failed messages after retries |
-
-## API Endpoints
-
-### REST
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/gateway/proxy/{service}/**` | Proxy to downstream service |
-| GET | `/api/gateway/health` | Service health + circuit breaker states |
-| GET | `/api/gateway/stats` | Request volume and latency analytics |
-| GET | `/api/gateway/logs` | Recent traffic from MongoDB |
-
-### SOAP
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/soap/transaction` | Process SOAP XML transaction |
-| POST | `/soap/convert/rest-to-soap` | Convert JSON request to SOAP envelope |
-
-### GraphQL
-
-Available at `/graphiql` — query request logs, service health, and gateway stats with flexible field selection.
-
-## Running
+## Quick Start
 
 ```bash
-mvn spring-boot:run   # http://localhost:8383/swagger-ui.html
+mvn spring-boot:run
+# Swagger UI: http://localhost:8383/swagger-ui.html
+# GraphiQL:   http://localhost:8383/graphiql
 ```
 
-No external databases needed — uses in-memory MongoDB (`mongo-java-server`).
+No external databases needed — uses in-memory MongoDB.
 
-## Testing
+## SOAP Example
+
+This is how a legacy banking system would send a transaction:
+
+```bash
+curl -X POST http://localhost:8383/soap/transaction \
+  -H "Content-Type: text/xml" \
+  -d '<?xml version="1.0"?>
+  <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+    <soap:Body>
+      <SourceAccount>+254700000001</SourceAccount>
+      <DestinationAccount>+254700000002</DestinationAccount>
+      <Amount>5000</Amount>
+      <Currency>KES</Currency>
+    </soap:Body>
+  </soap:Envelope>'
+```
+
+The response comes back as a SOAP envelope. You can also convert a JSON request to SOAP format using `/soap/convert/rest-to-soap`.
+
+## GraphQL
+
+Open [http://localhost:8383/graphiql](http://localhost:8383/graphiql) and try:
+
+```graphql
+{
+  serviceHealth {
+    name
+    status
+    responseTimeMs
+  }
+  gatewayStats {
+    totalRequests
+    successCount
+    avgResponseTimeMs
+  }
+}
+```
+
+## API Reference
+
+| Method | Endpoint | What it does |
+|---|---|---|
+| POST | `/api/gateway/proxy/{service}/**` | Forward request to a downstream service |
+| GET | `/api/gateway/health` | Health of all services + circuit breaker states |
+| GET | `/api/gateway/stats` | Request volume and latency stats |
+| GET | `/api/gateway/logs` | Recent requests from MongoDB |
+| POST | `/soap/transaction` | Process a SOAP XML transaction |
+| POST | `/soap/convert/rest-to-soap` | Convert JSON to SOAP envelope |
+
+## Built With
+
+Spring Boot 3.2, Apache Camel 4.4, Spring GraphQL, MongoDB (mongo-java-server for dev), Java 17, Docker, GitHub Actions CI.
+
+## Tests
 
 ```bash
 mvn test   # 11 tests
 ```
 
-Covers: rate limiter allow/block, circuit breaker states (closed/open/reset), SOAP XML parsing, success/error response generation, REST-to-SOAP conversion, MongoDB storage and querying.
+Covers rate limiter (allow and block), circuit breaker states (closed, open, reset on success), SOAP XML parsing, success and error response generation, REST-to-SOAP conversion, MongoDB storage, and service-based queries.
 
 ## License
 
