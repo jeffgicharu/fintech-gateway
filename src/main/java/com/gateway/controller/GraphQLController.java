@@ -1,7 +1,10 @@
 package com.gateway.controller;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gateway.model.RequestLog;
 import com.gateway.model.ServiceHealth;
+import com.gateway.registry.ServiceInstance;
+import com.gateway.registry.ServiceRegistry;
 import com.gateway.service.GatewayService;
 import com.gateway.service.RequestLogRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,8 @@ public class GraphQLController {
 
     private final RequestLogRepository logRepository;
     private final GatewayService gatewayService;
+    private final ServiceRegistry serviceRegistry;
+    private final ObjectMapper objectMapper;
 
     @QueryMapping
     public RequestLog requestLog(@Argument String id) {
@@ -31,16 +36,13 @@ public class GraphQLController {
     public List<RequestLog> requestLogs(@Argument String service,
                                          @Argument String status,
                                          @Argument Integer limit) {
-        int maxResults = limit != null ? limit : 20;
-
+        int max = limit != null ? limit : 20;
         if (service != null) {
             return logRepository.findByServiceOrderByTimestampDesc(service).stream()
-                    .limit(maxResults).collect(Collectors.toList());
+                    .limit(max).collect(Collectors.toList());
         }
-
         return logRepository.findAll(
-                PageRequest.of(0, maxResults, Sort.by(Sort.Direction.DESC, "timestamp"))
-        ).getContent();
+                PageRequest.of(0, max, Sort.by(Sort.Direction.DESC, "timestamp"))).getContent();
     }
 
     @QueryMapping
@@ -53,19 +55,23 @@ public class GraphQLController {
         return gatewayService.getStats();
     }
 
+    @QueryMapping
+    public List<ServiceInstance> registeredServices() {
+        return serviceRegistry.listAll();
+    }
+
     @MutationMapping
     public Map<String, Object> sendMoney(@Argument Map<String, Object> input) {
         try {
-            String body = String.format(
-                    "{\"recipientPhone\":\"%s\",\"amount\":%s,\"pin\":\"%s\",\"idempotencyKey\":\"%s\"}",
-                    input.get("recipientPhone"),
-                    input.get("amount"),
-                    input.get("pin"),
-                    "gql-" + UUID.randomUUID().toString().substring(0, 8));
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("recipientPhone", input.get("recipientPhone"));
+            payload.put("amount", input.get("amount"));
+            payload.put("pin", input.get("pin"));
+            payload.put("idempotencyKey", "gql-" + UUID.randomUUID().toString().substring(0, 8));
 
+            String body = objectMapper.writeValueAsString(payload);
             String result = gatewayService.proxyRequest(
-                    "wallet-api", "POST", "/api/wallet/transfer",
-                    body, "graphql-client");
+                    "wallet-api", "POST", "/api/wallet/transfer", body, "graphql-client");
 
             return Map.of("success", true, "message", "Transfer initiated", "reference", "GQL-TXN");
         } catch (Exception e) {
@@ -76,25 +82,16 @@ public class GraphQLController {
     @MutationMapping
     public Map<String, Object> sendNotification(@Argument Map<String, Object> input) {
         try {
-            String channel = (String) input.getOrDefault("channel", "SMS");
-            String recipient = (String) input.getOrDefault("recipient", "");
-            String body = (String) input.get("body");
-            String templateId = (String) input.get("templateId");
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("channel", input.getOrDefault("channel", "SMS"));
+            payload.put("recipient", input.getOrDefault("recipient", ""));
+            if (input.containsKey("templateId")) payload.put("templateId", input.get("templateId"));
+            if (input.containsKey("body")) payload.put("body", input.get("body"));
+            payload.put("idempotencyKey", "gql-" + UUID.randomUUID().toString().substring(0, 8));
 
-            StringBuilder json = new StringBuilder("{");
-            json.append("\"channel\":\"").append(channel).append("\",");
-            json.append("\"recipient\":\"").append(recipient).append("\",");
-            if (templateId != null) {
-                json.append("\"templateId\":\"").append(templateId).append("\",");
-            }
-            if (body != null) {
-                json.append("\"body\":\"").append(body).append("\",");
-            }
-            json.append("\"idempotencyKey\":\"gql-").append(UUID.randomUUID().toString().substring(0, 8)).append("\"}");
-
+            String body = objectMapper.writeValueAsString(payload);
             String result = gatewayService.proxyRequest(
-                    "notification-service", "POST", "/api/notifications",
-                    json.toString(), "graphql-client");
+                    "notification-service", "POST", "/api/notifications", body, "graphql-client");
 
             return Map.of("success", true, "message", "Notification queued");
         } catch (Exception e) {

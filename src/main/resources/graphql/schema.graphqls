@@ -3,6 +3,15 @@ type Query {
     requestLogs(service: String, status: String, limit: Int): [RequestLog!]!
     serviceHealth: [ServiceHealth!]!
     gatewayStats: GatewayStats!
+    registeredServices: [RegisteredService!]!
+}
+
+type RegisteredService {
+    serviceId: String!
+    name: String!
+    baseUrl: String!
+    status: String!
+    version: String
 }
 
 type Mutation {
