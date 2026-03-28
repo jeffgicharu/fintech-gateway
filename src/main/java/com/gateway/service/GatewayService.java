@@ -2,9 +2,10 @@ package com.gateway.service;
 
 import com.gateway.model.RequestLog;
 import com.gateway.model.ServiceHealth;
+import com.gateway.registry.ServiceInstance;
+import com.gateway.registry.ServiceRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -26,12 +27,7 @@ public class GatewayService {
     private final RequestLogRepository logRepository;
     private final RateLimiter rateLimiter;
     private final CircuitBreaker circuitBreaker;
-
-    @Value("${gateway.services.wallet-api}")
-    private String walletApiUrl;
-
-    @Value("${gateway.services.notification-service}")
-    private String notificationServiceUrl;
+    private final ServiceRegistry serviceRegistry;
 
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -90,17 +86,12 @@ public class GatewayService {
     }
 
     public List<ServiceHealth> checkHealth() {
-        Map<String, String> services = Map.of(
-                "wallet-api", walletApiUrl,
-                "notification-service", notificationServiceUrl
-        );
-
-        return services.entrySet().stream().map(entry -> {
+        return serviceRegistry.listAll().stream().map(svc -> {
             long start = System.currentTimeMillis();
             String status;
             try {
                 HttpRequest req = HttpRequest.newBuilder()
-                        .uri(URI.create(entry.getValue() + "/api-docs"))
+                        .uri(URI.create(svc.getBaseUrl() + svc.getHealthEndpoint()))
                         .timeout(Duration.ofSeconds(3))
                         .GET().build();
                 HttpResponse<String> resp = httpClient.send(req, HttpResponse.BodyHandlers.ofString());
@@ -111,8 +102,8 @@ public class GatewayService {
             long duration = System.currentTimeMillis() - start;
 
             return ServiceHealth.builder()
-                    .name(entry.getKey())
-                    .url(entry.getValue())
+                    .name(svc.getServiceId())
+                    .url(svc.getBaseUrl())
                     .status(status)
                     .responseTimeMs(duration)
                     .lastChecked(Instant.now())
@@ -130,8 +121,8 @@ public class GatewayService {
         double avgMs = recent.stream().mapToLong(RequestLog::getDurationMs).average().orElse(0);
 
         Map<String, Long> byService = new HashMap<>();
-        for (String svc : List.of("wallet-api", "notification-service")) {
-            byService.put(svc, logRepository.countByService(svc));
+        for (var svc : serviceRegistry.listAll()) {
+            byService.put(svc.getServiceId(), logRepository.countByService(svc.getServiceId()));
         }
 
         return Map.of(
@@ -144,11 +135,7 @@ public class GatewayService {
     }
 
     private String resolveServiceUrl(String service) {
-        return switch (service) {
-            case "wallet-api" -> walletApiUrl;
-            case "notification-service" -> notificationServiceUrl;
-            default -> null;
-        };
+        return serviceRegistry.resolveUrl(service).orElse(null);
     }
 
     private void logRequest(String service, String method, String path, int status,
