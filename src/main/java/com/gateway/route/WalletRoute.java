@@ -1,88 +1,105 @@
 package com.gateway.route;
 
 import com.gateway.service.GatewayService;
+import com.gateway.transform.MessageTransformer;
 import lombok.RequiredArgsConstructor;
 import org.apache.camel.Exchange;
 import org.apache.camel.builder.RouteBuilder;
 import org.springframework.stereotype.Component;
 
 /**
- * Camel route that proxies requests to the Wallet API.
- * Demonstrates Camel's content-based routing, error handling,
- * and integration patterns.
+ * Camel routes for wallet service integration.
+ * Uses real integration patterns: enrichment, wire tap, SEDA,
+ * content-based routing, sensitive field masking, and dead letter channel.
  */
 @Component
 @RequiredArgsConstructor
 public class WalletRoute extends RouteBuilder {
 
     private final GatewayService gatewayService;
+    private final MessageTransformer transformer;
 
     @Override
     public void configure() {
 
-        // Error handling with dead letter channel
         errorHandler(deadLetterChannel("seda:dead-letter")
                 .maximumRedeliveries(2)
                 .redeliveryDelay(1000)
                 .retryAttemptedLogLevel(org.apache.camel.LoggingLevel.WARN));
 
-        // Proxy wallet operations through Camel
         from("direct:wallet-balance")
                 .routeId("wallet-balance")
-                .log("Checking balance via gateway")
                 .process(exchange -> {
-                    String token = exchange.getIn().getHeader("Authorization", String.class);
                     String result = gatewayService.proxyRequest(
                             "wallet-api", "GET", "/api/wallet",
-                            null, getClientIp(exchange));
+                            null, clientIp(exchange));
                     exchange.getIn().setBody(result);
                 });
 
         from("direct:wallet-deposit")
                 .routeId("wallet-deposit")
-                .log("Processing deposit via gateway: ${body}")
                 .process(exchange -> {
                     String body = exchange.getIn().getBody(String.class);
+                    String enriched = transformer.enrichRequest(body, correlationId(exchange), "gateway");
                     String result = gatewayService.proxyRequest(
                             "wallet-api", "POST", "/api/wallet/deposit",
-                            body, getClientIp(exchange));
+                            enriched, clientIp(exchange));
                     exchange.getIn().setBody(result);
-                });
+                })
+                .wireTap("seda:audit-log");
 
         from("direct:wallet-transfer")
                 .routeId("wallet-transfer")
-                .log("Processing transfer via gateway")
                 .process(exchange -> {
                     String body = exchange.getIn().getBody(String.class);
+                    log.info("Transfer (masked): {}", transformer.maskSensitiveFields(body));
+                    String enriched = transformer.enrichRequest(body, correlationId(exchange), "gateway");
                     String result = gatewayService.proxyRequest(
                             "wallet-api", "POST", "/api/wallet/transfer",
-                            body, getClientIp(exchange));
+                            enriched, clientIp(exchange));
                     exchange.getIn().setBody(result);
+                    exchange.getIn().setHeader("transferResult", result);
                 })
+                .wireTap("seda:audit-log")
                 .to("seda:post-transfer-notification");
 
-        // Async notification after successful transfer
         from("seda:post-transfer-notification")
                 .routeId("post-transfer-notification")
-                .log("Triggering post-transfer notification")
                 .process(exchange -> {
-                    // Extract transfer details and send SMS notification
-                    String transferResult = exchange.getIn().getBody(String.class);
-                    log.info("Transfer completed, notification pipeline triggered");
+                    String transferResult = exchange.getIn().getHeader("transferResult",
+                            exchange.getIn().getBody(String.class), String.class);
+                    String payload = transformer.transferResultToNotification(transferResult, "recipient");
+                    if (payload != null) {
+                        try {
+                            gatewayService.proxyRequest("notification-service", "POST",
+                                    "/api/notifications", payload, "gateway-internal");
+                        } catch (Exception e) {
+                            log.warn("Post-transfer notification failed (non-blocking): {}", e.getMessage());
+                        }
+                    }
                 });
 
-        // Dead letter handler
+        from("seda:audit-log")
+                .routeId("audit-log")
+                .process(exchange -> {
+                    String masked = transformer.maskSensitiveFields(exchange.getIn().getBody(String.class));
+                    log.info("AUDIT: {}", masked);
+                });
+
         from("seda:dead-letter")
                 .routeId("dead-letter")
-                .log("Dead letter received: ${exception.message}")
                 .process(exchange -> {
                     Exception cause = exchange.getProperty(Exchange.EXCEPTION_CAUGHT, Exception.class);
-                    log.error("Failed message sent to dead letter: {}",
-                            cause != null ? cause.getMessage() : "unknown");
+                    log.error("Dead letter: {}", cause != null ? cause.getMessage() : "unknown");
                 });
     }
 
-    private String getClientIp(Exchange exchange) {
-        return exchange.getIn().getHeader("X-Forwarded-For", "127.0.0.1", String.class);
+    private String clientIp(Exchange ex) {
+        return ex.getIn().getHeader("X-Forwarded-For", "127.0.0.1", String.class);
+    }
+
+    private String correlationId(Exchange ex) {
+        return ex.getIn().getHeader("X-Correlation-ID",
+                java.util.UUID.randomUUID().toString().substring(0, 12), String.class);
     }
 }
