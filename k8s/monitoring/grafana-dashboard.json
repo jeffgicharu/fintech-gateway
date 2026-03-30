@@ -1,0 +1,45 @@
+{
+  "dashboard": {
+    "title": "fintech-gateway Dashboard",
+    "tags": ["fintech-gateway", "spring-boot"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "title": "Request Rate",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+        "targets": [{"expr": "rate(http_server_requests_seconds_count{application=\"fintech-gateway\"}[5m])", "legendFormat": "{{method}} {{uri}}"}]
+      },
+      {
+        "title": "Response Time (P95)",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+        "targets": [{"expr": "histogram_quantile(0.95, rate(http_server_requests_seconds_bucket{application=\"fintech-gateway\"}[5m]))", "legendFormat": "P95"}]
+      },
+      {
+        "title": "Error Rate",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 6, "x": 0, "y": 8},
+        "targets": [{"expr": "rate(http_server_requests_seconds_count{application=\"fintech-gateway\",status=~\"5..\"}[5m])"}]
+      },
+      {
+        "title": "JVM Memory",
+        "type": "graph",
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+        "targets": [{"expr": "jvm_memory_used_bytes{application=\"fintech-gateway\"}", "legendFormat": "{{area}} {{id}}"}]
+      },
+      {
+        "title": "gateway.proxy.requests.total",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 6, "y": 8},
+        "targets": [{"expr": "gateway.proxy.requests.total_total"}]
+      },
+      {
+        "title": "gateway.circuit_breaker.trips.total",
+        "type": "stat",
+        "gridPos": {"h": 4, "w": 4, "x": 10, "y": 8},
+        "targets": [{"expr": "gateway.circuit_breaker.trips.total_total"}]
+      }
+    ]
+  }
+}
