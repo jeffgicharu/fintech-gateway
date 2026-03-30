@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: fintech-gateway
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8383
+      targetPort: 8383
+      name: http
+  selector:
+    app: fintech-gateway

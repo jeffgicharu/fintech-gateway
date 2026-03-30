@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fintech-gateway
+  labels:
+    app: fintech-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fintech-gateway
+  template:
+    metadata:
+      labels:
+        app: fintech-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: "/actuator/prometheus"
+        prometheus.io/port: "8383"
+    spec:
+      containers:
+        - name: fintech-gateway
+          image: fintech-gateway:latest
+          ports:
+            - containerPort: 8383
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8383
+            initialDelaySeconds: 30
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8383
+            initialDelaySeconds: 60
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"

@@ -1,0 +1,19 @@
+replicaCount: 2
+image:
+  repository: fintech-gateway
+  tag: latest
+service:
+  type: ClusterIP
+  port: 8383
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+mongodb:
+  uri: "mongodb://mongo:27017/gateway"
+prometheus:
+  enabled: true
+  path: /actuator/prometheus
