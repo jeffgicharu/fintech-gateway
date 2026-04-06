@@ -155,7 +155,7 @@ src/main/java/com/gateway/
 
 ## Built With
 
-Spring Boot 3.2, Apache Camel 4.4, Spring Security + JWT, Spring GraphQL, MongoDB, Java 17, Docker, GitHub Actions CI.
+Spring Boot 3.2, Apache Camel 4.4, Spring Security + JWT, Spring GraphQL, MongoDB, ISO 20022, Java 17, Docker, Kubernetes + Helm, GitHub Actions CI, Prometheus metrics.
 
 ## Tests
 
@@ -166,6 +166,24 @@ mvn test   # 25 tests
 **Unit tests (11):** rate limiter allow/block, circuit breaker states, SOAP XML parsing with DOM, success/error response generation, REST-to-SOAP conversion, MongoDB storage and queries.
 
 **Integration tests (14):** API client registration, duplicate rejection, JWT token exchange, invalid credentials, protected endpoint rejection without token, protected endpoint access with valid token, SOAP endpoint with valid/invalid/malformed XML, REST-to-SOAP conversion, message enrichment, sensitive field masking, field mapping, transfer-to-notification transformation.
+
+## Performance Testing
+
+JMeter test plans are in `src/test/jmeter/`. Simulates **150 concurrent users** hitting the gateway for 90 seconds:
+
+- SOAP transaction processing with randomized account numbers and amounts (assert 200 status + ResultCode in response body, under 1s)
+- Health check endpoint (assert under 200ms)
+- GraphQL query for service health and gateway stats (assert under 1s)
+
+Tests the gateway's ability to handle concurrent SOAP XML parsing, protocol translation, and GraphQL query resolution under load.
+
+Run with: `jmeter -n -t src/test/jmeter/fintech-gateway-load-test.jmx -l results.jtl`
+
+## Code Quality
+
+- **JaCoCo** code coverage with threshold enforcement and CI artifact upload
+- **SonarCloud** static analysis integrated into CI pipeline
+- **OWASP Dependency Check** for vulnerability scanning in dependencies
 
 ## License
 
